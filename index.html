@@ -365,7 +365,7 @@ async function pdfToImage(file) {
 
   for (let i = 1; i <= pageCount; i++) {
     const page = await pdf.getPage(i);
-    const scale = 2.0; // high res for AI analysis
+    const scale = 1.5; // balanced res for AI analysis
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
@@ -388,13 +388,33 @@ async function pdfToImage(file) {
     yOffset += c.height;
   }
 
-  // Convert to PNG base64
-  const dataUrl = merged.toDataURL('image/png');
-  const base64 = dataUrl.split(',')[1];
+  // Convert to JPEG base64 (much smaller than PNG)
+  // Try quality 0.85, if still over 4.5MB reduce further
+  let quality = 0.85;
+  let dataUrl = merged.toDataURL('image/jpeg', quality);
+  let base64 = dataUrl.split(',')[1];
+
+  // Check size and reduce quality if needed (4.5MB limit with safety margin)
+  while (base64.length * 0.75 > 4500000 && quality > 0.3) {
+    quality -= 0.15;
+    dataUrl = merged.toDataURL('image/jpeg', quality);
+    base64 = dataUrl.split(',')[1];
+  }
+
+  // If still too large, scale down the canvas
+  if (base64.length * 0.75 > 4500000) {
+    const smallCanvas = document.createElement('canvas');
+    smallCanvas.width = Math.round(merged.width * 0.6);
+    smallCanvas.height = Math.round(merged.height * 0.6);
+    const sctx = smallCanvas.getContext('2d');
+    sctx.drawImage(merged, 0, 0, smallCanvas.width, smallCanvas.height);
+    dataUrl = smallCanvas.toDataURL('image/jpeg', 0.7);
+    base64 = dataUrl.split(',')[1];
+  }
 
   return {
     base64,
-    mediaType: 'image/png',
+    mediaType: 'image/jpeg',
     previewUrl: dataUrl,
     pageCount: pdf.numPages,
   };
