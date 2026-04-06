@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HVAC Estimator Pro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root {
+    --blue: #1e3a5f;
+    --teal: #0f766e;
+    --teal-light: #14b8a6;
+    --gray-50: #f8fafc;
+    --gray-100: #f1f5f9;
+    --gray-200: #e2e8f0;
+    --gray-300: #cbd5e1;
+    --gray-400: #94a3b8;
+    --gray-500: #64748b;
+    --gray-700: #334155;
+    --gray-800: #1e293b;
+    --gray-900: #0f172a;
+    --green: #10b981;
+    --red: #ef4444;
+    --orange: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--gray-50); color: var(--gray-800); line-height: 1.5; }
+
+  /* Header */
+  .header { background: linear-gradient(135deg, var(--blue) 0%, var(--teal) 100%); padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 12px rgba(0,0,0,.15); position: sticky; top: 0; z-index: 100; }
+  .header-brand { display: flex; align-items: center; gap: 10px; }
+  .header-icon { background: rgba(255,255,255,.12); border-radius: 8px; padding: 7px 10px; display: flex; }
+  .header h1 { color: #fff; font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+  .header h1 span { display: block; font-size: 11px; font-weight: 400; opacity: .7; }
+  .header-steps { display: flex; gap: 6px; align-items: center; }
+  .step-pill { padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; color: rgba(255,255,255,.5); background: rgba(255,255,255,.08); transition: all .3s; }
+  .step-pill.active { color: var(--blue); background: #fff; }
+  .step-pill.done { color: rgba(255,255,255,.9); background: rgba(255,255,255,.2); }
+
+  /* Container */
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+  /* Cards */
+  .card { background: #fff; border-radius: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06); border: 1px solid var(--gray-200); padding: 24px; margin-bottom: 16px; }
+
+  /* Buttons */
+  .btn { padding: 10px 22px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all .2s; border: none; display: inline-flex; align-items: center; gap: 6px; }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+  .btn-primary { background: linear-gradient(135deg, var(--blue), var(--teal)); color: #fff; }
+  .btn-outline { background: #fff; color: var(--gray-800); border: 1px solid var(--gray-300); }
+  .btn-sm { padding: 6px 14px; font-size: 12px; border-radius: 8px; }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-green { background: var(--green); color: #fff; }
+
+  /* Upload area */
+  .upload-zone { border: 2px dashed var(--gray-300); border-radius: 16px; padding: 60px 32px; text-align: center; cursor: pointer; transition: all .2s; }
+  .upload-zone:hover, .upload-zone.dragover { border-color: var(--teal); background: #f0fdfa; }
+  .upload-zone svg { color: var(--gray-400); margin-bottom: 12px; }
+  .upload-zone h3 { font-size: 16px; margin-bottom: 4px; }
+  .upload-zone p { color: var(--gray-400); font-size: 13px; }
+
+  /* API Key setup */
+  .api-setup { max-width: 540px; margin: 40px auto; text-align: center; }
+  .api-setup h2 { font-size: 22px; margin-bottom: 8px; }
+  .api-setup p { color: var(--gray-500); font-size: 14px; margin-bottom: 20px; }
+  .api-input-wrap { display: flex; gap: 8px; margin-bottom: 12px; }
+  .api-input-wrap input { flex: 1; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--gray-300); font-size: 14px; font-family: monospace; }
+  .api-input-wrap input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(15,118,110,.1); }
+  .api-note { font-size: 12px; color: var(--gray-400); }
+  .api-note a { color: var(--teal); }
+
+  /* Progress */
+  .progress-bar-bg { background: var(--gray-200); border-radius: 8px; height: 8px; overflow: hidden; margin-bottom: 20px; }
+  .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--blue), var(--teal)); border-radius: 8px; transition: width .5s ease; }
+  .analysis-step { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; color: var(--gray-500); animation: fadeIn .3s ease; }
+  .analysis-step .done { color: var(--green); }
+  .analysis-step.current { color: var(--teal); font-weight: 500; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .spinner { animation: spin 1s linear infinite; }
+
+  /* Room cards */
+  .room-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
+  .room-card { background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06); border: 1px solid var(--gray-200); transition: all .2s; }
+  .room-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+  .room-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .room-card-header input { font-size: 14px; font-weight: 600; border: none; background: transparent; width: 65%; color: var(--gray-800); }
+  .room-card-header input:focus { outline: none; border-bottom: 1px solid var(--teal); }
+  .room-card .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .field label { display: block; font-size: 10px; color: var(--gray-400); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+  .field input, .field select { width: 100%; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--gray-200); font-size: 12px; background: var(--gray-50); color: var(--gray-800); }
+  .room-meta { display: flex; gap: 8px; font-size: 11px; color: var(--gray-400); margin-top: 8px; }
+  .icon-btn { background: none; border: none; color: var(--gray-400); cursor: pointer; padding: 4px; border-radius: 4px; }
+  .icon-btn:hover { color: var(--red); background: #fef2f2; }
+
+  /* BOM Table */
+  .bom-layout { display: grid; grid-template-columns: 1fr 340px; gap: 20px; }
+  @media (max-width: 900px) { .bom-layout { grid-template-columns: 1fr; } }
+  .bom-category { font-size: 12px; font-weight: 700; color: var(--teal); text-transform: uppercase; letter-spacing: .05em; padding: 10px 0 4px; border-bottom: 2px solid var(--teal); margin-top: 16px; }
+  .bom-row { display: grid; grid-template-columns: 1fr 50px 55px 85px 85px 28px; align-items: center; gap: 6px; padding: 7px 0; border-bottom: 1px solid var(--gray-100); font-size: 12px; }
+  .bom-row .name { font-weight: 500; }
+  .bom-row .meta { font-size: 10px; color: var(--gray-400); }
+  .bom-row .price-flag { font-size: 9px; padding: 1px 5px; border-radius: 4px; font-weight: 600; }
+  .bom-row .price-flag.default { background: #fef3c7; color: #92400e; }
+  .bom-row .price-flag.quoted { background: #d1fae5; color: #065f46; }
+  .bom-row input { width: 100%; padding: 3px 5px; border-radius: 4px; border: 1px solid var(--gray-200); font-size: 12px; text-align: center; color: var(--gray-800); }
+  .bom-cat-total { text-align: right; padding: 4px 34px 4px 0; font-size: 12px; font-weight: 600; color: var(--gray-500); }
+
+  /* Summary panel */
+  .summary-panel { position: sticky; top: 80px; }
+  .summary-card { background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); border: 1px solid var(--gray-200); margin-bottom: 12px; }
+  .summary-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 14px; }
+  .summary-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; color: var(--gray-500); }
+  .summary-row .val { font-weight: 600; color: var(--gray-800); }
+  .summary-row.total { border-top: 2px solid var(--gray-800); margin-top: 8px; padding-top: 10px; font-size: 18px; font-weight: 700; color: var(--gray-800); }
+  .summary-row.total .val { color: var(--teal); }
+  .profit-card { background: linear-gradient(135deg, var(--blue), var(--teal)); border-radius: 14px; padding: 20px; color: #fff; margin-bottom: 12px; }
+  .profit-card h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; opacity: .7; margin-bottom: 8px; }
+  .profit-card .big { font-size: 26px; font-weight: 700; }
+  .profit-card .sub { font-size: 12px; opacity: .7; }
+  .profit-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .profit-stat { background: rgba(255,255,255,.1); border-radius: 8px; padding: 8px 10px; }
+  .profit-stat .label { font-size: 10px; opacity: .7; }
+  .profit-stat .val { font-size: 15px; font-weight: 700; }
+
+  /* Slider */
+  .slider-wrap { margin-bottom: 14px; }
+  .slider-wrap label { font-size: 12px; color: var(--gray-500); font-weight: 500; display: block; margin-bottom: 4px; }
+  .slider-row { display: flex; align-items: center; gap: 8px; }
+  .slider-row input[type=range] { flex: 1; accent-color: var(--teal); }
+  .slider-row .val { font-size: 14px; font-weight: 700; color: var(--teal); min-width: 36px; text-align: right; }
+  .small-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .small-inputs label { display: block; font-size: 12px; color: var(--gray-500); font-weight: 500; margin-bottom: 3px; }
+  .small-inputs input { width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--gray-200); font-size: 13px; color: var(--gray-800); }
+
+  /* RFQ Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200; display: flex; align-items: center; justify-content: center; }
+  .modal { background: #fff; border-radius: 16px; max-width: 700px; width: 95%; max-height: 85vh; overflow-y: auto; padding: 28px; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+  .modal h2 { font-size: 18px; margin-bottom: 16px; }
+  .modal pre { background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 8px; padding: 16px; font-size: 11px; line-height: 1.5; overflow-x: auto; white-space: pre; font-family: 'Courier New', monospace; max-height: 400px; overflow-y: auto; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+
+  /* Floorplan preview */
+  .floorplan-preview { max-height: 180px; border-radius: 10px; overflow: hidden; border: 1px solid var(--gray-200); margin-bottom: 16px; }
+  .floorplan-preview img { width: 100%; object-fit: cover; max-height: 180px; }
+
+  /* Error */
+  .error-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 14px 18px; color: #991b1b; font-size: 13px; margin-bottom: 16px; }
+
+  /* Animations */
+  .slide-up { animation: slideUp .4s ease; }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Hide on print */
+  @media print {
+    .header, .btn, .no-print { display: none !important; }
+    .bom-layout { grid-template-columns: 1fr !important; }
+    body { background: #fff; }
+  }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+// ================================================================
+// HVAC ESTIMATOR PRO — Single-file browser app
+// ================================================================
+
+// ── STATE ──
+const state = {
+  step: 'setup', // setup | upload | analyzing | rooms | bom
+  apiKey: '',
+  apiKeyValid: false,
+  floorplanImg: null,
+  fileName: '',
+  analysisProgress: 0,
+  analysisSteps: [],
+  analysisResult: null,
+  rooms: [],
+  bom: null,
+  profitMargin: 35,
+  laborRate: 85,
+  laborHours: 16,
+  projectName: 'New HVAC Estimate',
+  customerName: '',
+  companyName: '',
+  companyEmail: '',
+  companyPhone: '',
+  supplierName: 'Johnstone Supply',
+  editingPrice: null,
+  showRFQ: false,
+  error: null,
+};
+
+// Check for saved API key
+const savedKey = (() => { try { return sessionStorage.getItem('hvac_api_key') || ''; } catch(e) { return ''; } })();
+if (savedKey) { state.apiKey = savedKey; state.apiKeyValid = true; state.step = 'upload'; }
+
+// ── PARTS DATABASE ──
+const PARTS_DB = {
+  "COND-2T-14S": { name: "2-Ton Condenser (14 SEER2)", category: "Major Equipment", unit: "ea", price: 1850, supplier: "Carrier", sku: "24ACC636A003" },
+  "COND-2.5T-14S": { name: "2.5-Ton Condenser (14 SEER2)", category: "Major Equipment", unit: "ea", price: 2150, supplier: "Carrier", sku: "24ACC660A003" },
+  "COND-3T-14S": { name: "3-Ton Condenser (14 SEER2)", category: "Major Equipment", unit: "ea", price: 2450, supplier: "Carrier", sku: "24ACC636A003" },
+  "COND-3.5T-16S": { name: "3.5-Ton Condenser (16 SEER2)", category: "Major Equipment", unit: "ea", price: 2950, supplier: "Carrier", sku: "24ACC642A003" },
+  "COND-4T-16S": { name: "4-Ton Condenser (16 SEER2)", category: "Major Equipment", unit: "ea", price: 3350, supplier: "Carrier", sku: "24ACC648A003" },
+  "COND-5T-16S": { name: "5-Ton Condenser (16 SEER2)", category: "Major Equipment", unit: "ea", price: 3950, supplier: "Carrier", sku: "24ACC660A003" },
+  "AH-2T-VS": { name: "2-Ton Air Handler (Var Speed)", category: "Major Equipment", unit: "ea", price: 1250, supplier: "Carrier", sku: "FE4ANB002" },
+  "AH-2.5T-VS": { name: "2.5-Ton Air Handler (Var Speed)", category: "Major Equipment", unit: "ea", price: 1400, supplier: "Carrier", sku: "FE4ANB0025" },
+  "AH-3T-VS": { name: "3-Ton Air Handler (Var Speed)", category: "Major Equipment", unit: "ea", price: 1550, supplier: "Carrier", sku: "FE4ANB003" },
+  "AH-3.5T-VS": { name: "3.5-Ton Air Handler (Var Speed)", category: "Major Equipment", unit: "ea", price: 1700, supplier: "Carrier", sku: "FE4ANB0035" },
+  "AH-4T-VS": { name: "4-Ton Air Handler (Var Speed)", category: "Major Equipment", unit: "ea", price: 1850, supplier: "Carrier", sku: "FE4ANB004" },
+  "AH-5T-VS": { name: "5-Ton Air Handler (Var Speed)", category: "Major Equipment", unit: "ea", price: 2150, supplier: "Carrier", sku: "FE4ANB005" },
+  "TSTAT-WIFI": { name: "Wi-Fi Smart Thermostat", category: "Controls", unit: "ea", price: 165, supplier: "Ecobee", sku: "EB-STATEsi" },
+  "TRUNK-8x12": { name: '8"x12" Sheet Metal Trunk', category: "Ductwork", unit: "ft", price: 12.50, supplier: "Local Sheet Metal", sku: "SM0812" },
+  "TRUNK-10x14": { name: '10"x14" Sheet Metal Trunk', category: "Ductwork", unit: "ft", price: 15.75, supplier: "Local Sheet Metal", sku: "SM1014" },
+  "TRUNK-12x16": { name: '12"x16" Sheet Metal Trunk', category: "Ductwork", unit: "ft", price: 18.50, supplier: "Local Sheet Metal", sku: "SM1216" },
+  "FLEX-6": { name: '6" Round Flex Duct', category: "Ductwork", unit: "ft", price: 2.85, supplier: "Hart & Cooley", sku: "FD06" },
+  "FLEX-8": { name: '8" Round Flex Duct', category: "Ductwork", unit: "ft", price: 3.45, supplier: "Hart & Cooley", sku: "FD08" },
+  "FLEX-10": { name: '10" Round Flex Duct', category: "Ductwork", unit: "ft", price: 4.25, supplier: "Hart & Cooley", sku: "FD10" },
+  "PLENUM-SUP": { name: "Supply Plenum", category: "Ductwork", unit: "ea", price: 145, supplier: "Local Sheet Metal", sku: "PL-SUP" },
+  "PLENUM-RET": { name: "Return Plenum", category: "Ductwork", unit: "ea", price: 165, supplier: "Local Sheet Metal", sku: "PL-RET" },
+  "REG-4x12": { name: '4"x12" Supply Register', category: "Registers & Grilles", unit: "ea", price: 9.75, supplier: "Hart & Cooley", sku: "421-4x12W" },
+  "REG-6x12": { name: '6"x12" Supply Register', category: "Registers & Grilles", unit: "ea", price: 12.50, supplier: "Hart & Cooley", sku: "421-6x12W" },
+  "RET-20x25": { name: '20"x25" Return Grille', category: "Registers & Grilles", unit: "ea", price: 22.50, supplier: "Hart & Cooley", sku: "RG-2025W" },
+  "RET-20x30": { name: '20"x30" Return Grille', category: "Registers & Grilles", unit: "ea", price: 28, supplier: "Hart & Cooley", sku: "RG-2030W" },
+  "RET-24x30": { name: '24"x30" Return Grille', category: "Registers & Grilles", unit: "ea", price: 34, supplier: "Hart & Cooley", sku: "RG-2430W" },
+  "LS-25": { name: '3/8"x3/4" Line Set (25ft)', category: "Refrigerant & Lines", unit: "ea", price: 85, supplier: "Mueller", sku: "LS-3825" },
+  "LS-50": { name: '3/8"x3/4" Line Set (50ft)', category: "Refrigerant & Lines", unit: "ea", price: 145, supplier: "Mueller", sku: "LS-3850" },
+  "R410A-25": { name: "R-410A Refrigerant (25lb)", category: "Refrigerant & Lines", unit: "ea", price: 185, supplier: "National", sku: "R410A-25" },
+  "DISC-60A": { name: "60A Non-Fused Disconnect", category: "Electrical", unit: "ea", price: 32, supplier: "Eaton", sku: "DPU222R" },
+  "WHIP-6FT": { name: '3/4" Conduit Whip (6ft)', category: "Electrical", unit: "ea", price: 18, supplier: "Southwire", sku: "55189407" },
+  "BRKR-30A": { name: "30A Dbl-Pole Breaker", category: "Electrical", unit: "ea", price: 12, supplier: "Square D", sku: "HOM230CP" },
+  "BRKR-40A": { name: "40A Dbl-Pole Breaker", category: "Electrical", unit: "ea", price: 14, supplier: "Square D", sku: "HOM240CP" },
+  "BRKR-50A": { name: "50A Dbl-Pole Breaker", category: "Electrical", unit: "ea", price: 16, supplier: "Square D", sku: "HOM250CP" },
+  "CPUMP": { name: "Condensate Pump", category: "Installation", unit: "ea", price: 65, supplier: "Little Giant", sku: "554405" },
+  "PTRAP": { name: 'P-Trap (3/4" PVC)', category: "Installation", unit: "ea", price: 4.50, supplier: "Charlotte Pipe", sku: "PVC00700" },
+  "DRAIN-PVC": { name: '3/4" PVC Drain Line (10ft)', category: "Installation", unit: "ea", price: 8.50, supplier: "Charlotte Pipe", sku: "PVC07010" },
+  "FILT-16x25": { name: "16x25x1 Filter (MERV 8)", category: "Installation", unit: "ea", price: 6.50, supplier: "Filtrete", sku: "F16251" },
+  "FILT-20x25": { name: "20x25x1 Filter (MERV 8)", category: "Installation", unit: "ea", price: 7.50, supplier: "Filtrete", sku: "F20251" },
+  "MASTIC": { name: "Duct Mastic (1 Gal)", category: "Installation", unit: "ea", price: 14.50, supplier: "Hardcast", sku: "304133" },
+  "TAPE-FOIL": { name: 'Foil Tape (2.5"x60yd)', category: "Installation", unit: "ea", price: 12.50, supplier: "Nashua", sku: "322" },
+  "PAD-COND": { name: "Condenser Pad (24x24x3)", category: "Installation", unit: "ea", price: 38, supplier: "DiversiTech", sku: "EL2424-3" },
+  "HANGER": { name: "Hanger Strap (100ft)", category: "Installation", unit: "ea", price: 22, supplier: "Oatey", sku: "33528" },
+};
+
+// ── LOAD FACTORS ──
+const LOAD_FACTORS = {
+  master_bedroom: { btu: 25, cfm: 1.0, reg: 2 },
+  bedroom: { btu: 25, cfm: 1.0, reg: 1 },
+  living_room: { btu: 30, cfm: 1.2, reg: 2 },
+  family_room: { btu: 30, cfm: 1.2, reg: 2 },
+  kitchen: { btu: 35, cfm: 1.3, reg: 1 },
+  dining_room: { btu: 28, cfm: 1.0, reg: 1 },
+  bathroom: { btu: 28, cfm: 0.8, reg: 1 },
+  half_bath: { btu: 28, cfm: 0.8, reg: 0 },
+  hallway: { btu: 20, cfm: 0.5, reg: 1 },
+  laundry: { btu: 28, cfm: 0.8, reg: 1 },
+  office: { btu: 28, cfm: 1.0, reg: 1 },
+  foyer: { btu: 25, cfm: 0.6, reg: 1 },
+  sunroom: { btu: 45, cfm: 1.5, reg: 2 },
+  bonus_room: { btu: 30, cfm: 1.0, reg: 1 },
+  basement: { btu: 20, cfm: 0.8, reg: 1 },
+  closet: { btu: 0, cfm: 0, reg: 0 },
+  garage: { btu: 0, cfm: 0, reg: 0 },
+};
+
+const ROOM_TYPES = Object.keys(LOAD_FACTORS);
+
+// ── CLAUDE VISION PROMPT ──
+const SYSTEM_PROMPT = `You are an expert HVAC load calculation engineer and architectural plan reader. Your job is to analyze floorplan images and extract structured data for HVAC system design. You have 20+ years of experience reading both detailed architectural blueprints and simple real estate listing floorplans.`;
+
+const ANALYSIS_PROMPT = `Analyze this floorplan image carefully and extract all room information for HVAC system design.
+
+For EACH room you can identify, extract:
+- name: The room label (e.g., "Master Bedroom", "Kitchen")
+- type: One of: master_bedroom, bedroom, living_room, family_room, kitchen, dining_room, bathroom, half_bath, hallway, laundry, office, garage, basement, closet, foyer, sunroom, bonus_room
+- estimated_sqft: Best estimate of square footage (calculate from dimensions if marked, otherwise estimate from proportions)
+- width_ft: Estimated width in feet
+- length_ft: Estimated length in feet
+- window_count: Number of windows visible (estimate if unclear)
+- exterior_walls: Number of exterior walls (0-4)
+- ceiling_height: Assume 8ft unless indicated otherwise (vaulted, 9ft, 10ft)
+- notes: Special characteristics
+
+Also provide building info:
+- stories: Number of stories (1, 1.5, 2, 3)
+- total_sqft: Total conditioned sqft (exclude garage)
+- has_garage: true/false
+- building_shape: rectangle, L-shape, U-shape, irregular
+
+And HVAC notes:
+- suggested_equipment_location: attic, basement, garage, closet, crawlspace
+- suggested_zones: number
+- special_considerations: array of notes
+
+Return ONLY valid JSON (no markdown fences):
+{
+  "floorplan_type": "architectural_blueprint | real_estate_layout | hand_sketch | construction_drawing",
+  "confidence": "high | medium | low",
+  "building": {
+    "stories": 1,
+    "total_sqft": 1800,
+    "has_garage": true,
+    "building_shape": "rectangle"
+  },
+  "rooms": [
+    {
+      "name": "Living Room",
+      "type": "living_room",
+      "floor": 1,
+      "estimated_sqft": 320,
+      "width_ft": 20.0,
+      "length_ft": 16.0,
+      "window_count": 3,
+      "exterior_walls": 2,
+      "ceiling_height": 8,
+      "notes": ""
+    }
+  ],
+  "hvac_notes": {
+    "suggested_equipment_location": "attic",
+    "suggested_zones": 1,
+    "special_considerations": []
+  },
+  "analysis_notes": "Your observations"
+}
+
+RULES:
+- Always provide your BEST estimate even if image is unclear
+- Do NOT include garages in conditioned sqft
+- Do NOT skip small rooms (closets, laundry, half baths)
+- If multiple floors, include ALL rooms with correct floor number
+- Set confidence to "low" if image quality is poor`;
+
+
+// ── HELPER FUNCTIONS ──
+function fmt(n) { return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtShort(n) { return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1];
+      const mediaType = file.type || 'image/png';
+      resolve({ base64, mediaType });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Convert PDF to PNG image using pdf.js
+async function pdfToImage(file) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+  // Render all pages into a single tall image (or just first page if many)
+  const pageCount = Math.min(pdf.numPages, 3); // max 3 pages
+  const canvases = [];
+
+  for (let i = 1; i <= pageCount; i++) {
+    const page = await pdf.getPage(i);
+    const scale = 2.0; // high res for AI analysis
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    canvases.push(canvas);
+  }
+
+  // Stitch pages vertically into one image
+  const totalHeight = canvases.reduce((h, c) => h + c.height, 0);
+  const maxWidth = Math.max(...canvases.map(c => c.width));
+  const merged = document.createElement('canvas');
+  merged.width = maxWidth;
+  merged.height = totalHeight;
+  const mctx = merged.getContext('2d');
+  let yOffset = 0;
+  for (const c of canvases) {
+    mctx.drawImage(c, 0, yOffset);
+    yOffset += c.height;
+  }
+
+  // Convert to PNG base64
+  const dataUrl = merged.toDataURL('image/png');
+  const base64 = dataUrl.split(',')[1];
+
+  return {
+    base64,
+    mediaType: 'image/png',
+    previewUrl: dataUrl,
+    pageCount: pdf.numPages,
+  };
+}
+
+// ── CLAUDE API CALL ──
+async function callClaudeVision(apiKey, imageBase64, mediaType) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
+          { type: 'text', text: ANALYSIS_PROMPT },
+        ],
+      }],
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  let text = data.content[0].text.trim();
+
+  // Strip markdown fences if present
+  if (text.startsWith('```')) {
+    text = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+  }
+
+  return JSON.parse(text);
+}
+
+// ── BOM GENERATION ──
+function generateBOM(rooms, building, hvacNotes) {
+  let totalBTU = 0, totalCFM = 0, totalRegs = 0;
+  const returnRooms = [];
+  let condSqft = 0;
+  const roomLoads = [];
+
+  for (const room of rooms) {
+    const f = LOAD_FACTORS[room.type] || LOAD_FACTORS.bedroom;
+    if (room.type === 'garage' || room.type === 'closet') { roomLoads.push({...room, btu: 0, cfm: 0, regs: 0}); continue; }
+
+    const sqft = room.estimated_sqft || 0;
+    const wins = room.window_count || 0;
+    const ext = room.exterior_walls || 0;
+    const ceil = room.ceiling_height || 8;
+
+    const baseBTU = sqft * f.btu;
+    const winBTU = wins * 1000;
+    const wallBTU = ext * 500;
+    const ceilFactor = ceil / 8;
+    const roomBTU = Math.ceil((baseBTU + winBTU + wallBTU) * ceilFactor);
+    const roomCFM = Math.ceil(sqft * f.cfm);
+    const regs = Math.max(f.reg, Math.ceil(roomCFM / 150));
+
+    totalBTU += roomBTU;
+    totalCFM += roomCFM;
+    totalRegs += regs;
+    condSqft += sqft;
+
+    if (sqft >= 200 && ext >= 1 && !['hallway','bathroom','half_bath','laundry'].includes(room.type)) {
+      returnRooms.push(room.name);
+    }
+    roomLoads.push({...room, btu: roomBTU, cfm: roomCFM, regs});
+  }
+
+  const designBTU = Math.ceil(totalBTU * 1.15);
+  let tonnage = Math.ceil((designBTU / 12000) * 2) / 2;
+  tonnage = Math.max(2, Math.min(5, tonnage));
+  const stories = building?.stories || 1;
+  const zones = (stories >= 2 && condSqft > 1800) || condSqft > 3000 ? 2 : 1;
+  const retCount = Math.max(returnRooms.length, 2);
+
+  // Build line items
+  const items = [];
+  function add(id, qty, notes) {
+    if (!PARTS_DB[id]) return;
+    const p = PARTS_DB[id];
+    items.push({ partId: id, name: p.name, category: p.category, qty, unit: p.unit, price: p.price, supplier: p.supplier, sku: p.sku, notes: notes || '', source: 'default' });
+  }
+
+  // Equipment
+  const ts = String(tonnage).replace('.0','');
+  const seer = tonnage <= 3 ? '14S' : '16S';
+  add(`COND-${ts}T-${seer}`, 1, `Sized for ${designBTU.toLocaleString()} BTU`);
+  add(`AH-${ts}T-VS`, 1, `${totalCFM} CFM total`);
+  add('TSTAT-WIFI', zones, `${zones} zone(s)`);
+
+  // Ductwork
+  const trunkLen = Math.ceil(condSqft / 35);
+  if (tonnage <= 3) add('TRUNK-8x12', trunkLen, 'Main trunk');
+  else if (tonnage <= 4) add('TRUNK-10x14', trunkLen, 'Main trunk');
+  else add('TRUNK-12x16', trunkLen, 'Main trunk');
+
+  add('FLEX-8', Math.ceil(totalRegs * 10), `Branch runs to ${totalRegs} registers`);
+  add('FLEX-6', Math.ceil(totalRegs * 8), 'Reducer branches');
+  add('PLENUM-SUP', 1); add('PLENUM-RET', 1);
+
+  // Registers
+  const largeRegs = roomLoads.filter(r => (r.estimated_sqft||0) >= 250 && r.type !== 'garage').reduce((s,r) => s + (r.regs||0), 0);
+  const smallRegs = totalRegs - largeRegs;
+  if (largeRegs > 0) add('REG-6x12', largeRegs, 'Large rooms');
+  if (smallRegs > 0) add('REG-4x12', smallRegs, 'Standard rooms');
+  if (tonnage <= 3) add('RET-20x25', retCount, 'Return grilles');
+  else if (tonnage <= 4) add('RET-20x30', retCount, 'Return grilles');
+  else add('RET-24x30', retCount, 'Return grilles');
+
+  // Refrigerant
+  add(condSqft > 1500 || stories > 1 ? 'LS-50' : 'LS-25', 1, 'Condenser to air handler');
+  add('R410A-25', 1, 'System charge');
+
+  // Electrical
+  add('DISC-60A', 1); add('WHIP-6FT', 1);
+  if (tonnage <= 3) add('BRKR-30A', 1);
+  else if (tonnage <= 4) add('BRKR-40A', 1);
+  else add('BRKR-50A', 1);
+
+  // Install materials
+  const equipLoc = hvacNotes?.suggested_equipment_location || '';
+  if (['attic','closet'].includes(equipLoc)) add('CPUMP', 1, `${equipLoc} install`);
+  add('PTRAP', 1); add('DRAIN-PVC', 2);
+  add(tonnage <= 3 ? 'FILT-16x25' : 'FILT-20x25', 2, '1 installed + 1 spare');
+  add('MASTIC', Math.max(2, Math.ceil(trunkLen/25)));
+  add('TAPE-FOIL', Math.max(2, Math.ceil(totalRegs/6)));
+  add('PAD-COND', 1); add('HANGER', Math.max(2, Math.ceil(trunkLen/40)));
+
+  return {
+    items,
+    summary: { designBTU, tonnage, totalCFM, totalRegs, retCount, condSqft, zones },
+    roomLoads,
+  };
+}
+
+// ── RFQ TEXT GENERATION ──
+function generateRFQText(bom, s) {
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const due = new Date(Date.now() + 7*86400000).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const rfqNum = 'RFQ-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-001';
+  const sum = bom.summary;
+
+  let lines = [];
+  lines.push('='.repeat(66));
+  lines.push(`  REQUEST FOR QUOTE — ${rfqNum}`);
+  lines.push('='.repeat(66));
+  lines.push('');
+  if (s.companyName) lines.push(`  From: ${s.companyName}`);
+  if (s.companyPhone) lines.push(`        ${s.companyPhone}`);
+  if (s.companyEmail) lines.push(`        ${s.companyEmail}`);
+  lines.push(`  Date: ${today}`);
+  lines.push(`  Quote Needed By: ${due}`);
+  lines.push('');
+  lines.push(`  To: ${s.supplierName || 'Supplier'}`);
+  lines.push('');
+  if (s.projectName) lines.push(`  Project: ${s.projectName}`);
+  if (s.customerName) lines.push(`  Customer: ${s.customerName}`);
+  lines.push(`  System Size: ${sum.tonnage} Ton  |  ${sum.condSqft.toLocaleString()} sq ft`);
+  lines.push('');
+  lines.push('-'.repeat(66));
+  lines.push('');
+  lines.push('  Please provide your best pricing on the items below.');
+  lines.push('  Quantities are estimates and may adjust at time of order.');
+  lines.push('');
+
+  // Group by category
+  const cats = {};
+  bom.items.forEach((item, i) => {
+    if (!cats[item.category]) cats[item.category] = [];
+    cats[item.category].push({...item, num: i+1});
+  });
+
+  for (const [cat, items] of Object.entries(cats)) {
+    lines.push(`  ${cat.toUpperCase()}`);
+    lines.push('  ' + '─'.repeat(62));
+    lines.push(`  ${'#'.padEnd(4)} ${'Description'.padEnd(34)} ${'SKU'.padEnd(14)} ${'Qty'.padStart(5)} ${'Unit'.padEnd(4)}  Your Price`);
+    lines.push('  ' + '─'.repeat(62));
+    for (const item of items) {
+      lines.push(`  ${String(item.num).padEnd(4)} ${item.name.padEnd(34)} ${item.sku.padEnd(14)} ${String(item.qty).padStart(5)} ${item.unit.padEnd(4)}  $__________`);
+    }
+    lines.push('');
+  }
+
+  lines.push('-'.repeat(66));
+  lines.push('');
+  lines.push(`  Total line items: ${bom.items.length}`);
+  lines.push('');
+  lines.push('  NOTES:');
+  lines.push('  • Please include lead times for items not in stock');
+  lines.push('  • Pricing valid for 30 days from quote date');
+  lines.push('  • Note any substitutions or equivalents');
+  lines.push('  • Job site delivery preferred — include freight');
+  lines.push('');
+  lines.push(`  Return quote to: ${s.companyEmail || s.companyName || 'us'}`);
+  lines.push(`  by ${due}`);
+  lines.push('');
+  lines.push('='.repeat(66));
+
+  return lines.join('\n');
+}
+
+function generateRFQCSV(bom) {
+  let csv = 'Item #,Category,Description,Manufacturer,SKU,Qty,Unit,Your Unit Price,Your Extended Price,Lead Time,Notes\n';
+  bom.items.forEach((item, i) => {
+    csv += `${i+1},"${item.category}","${item.name}","${item.supplier}","${item.sku}",${item.qty},${item.unit},,,, \n`;
+  });
+  return csv;
+}
+
+// ── RENDER ──
+function render() {
+  const app = document.getElementById('app');
+
+  const stepIdx = { setup: 0, upload: 1, analyzing: 1, rooms: 2, bom: 3 }[state.step] || 0;
+  const stepNames = ['Setup', 'Upload', 'Rooms', 'Estimate'];
+
+  let html = `
+    <div class="header">
+      <div class="header-brand">
+        <div class="header-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"/></svg>
+        </div>
+        <h1>HVAC Estimator Pro<span>Floorplan → Bill of Materials</span></h1>
+      </div>
+      <div class="header-steps">
+        ${stepNames.map((name, i) => `<div class="step-pill ${i === stepIdx ? 'active' : i < stepIdx ? 'done' : ''}">${i+1}. ${name}</div>`).join('')}
+      </div>
+    </div>
+    <div class="container slide-up">
+  `;
+
+  // ── ERROR ──
+  if (state.error) {
+    html += `<div class="error-box">⚠️ ${state.error} <button onclick="state.error=null;render();" style="float:right;background:none;border:none;cursor:pointer;font-weight:bold;">✕</button></div>`;
+  }
+
+  // ── STEP: API KEY SETUP ──
+  if (state.step === 'setup') {
+    html += `
+      <div class="api-setup">
+        <h2>Welcome! Let's get you set up.</h2>
+        <p>This app uses Claude AI to analyze floorplan photos. You'll need an Anthropic API key (takes 2 minutes to get one).</p>
+        <div class="api-input-wrap">
+          <input type="password" id="apiKeyInput" placeholder="sk-ant-api03-..." value="${state.apiKey}" />
+          <button class="btn btn-primary" onclick="saveApiKey()">Connect</button>
+        </div>
+        <p class="api-note">
+          Get your key at <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a> → API Keys → Create Key<br>
+          Your key stays in your browser only — it's never sent anywhere except Anthropic's API.
+        </p>
+        <div style="margin-top:32px; padding-top:20px; border-top:1px solid var(--gray-200);">
+          <p style="color:var(--gray-500);font-size:13px;margin-bottom:10px;">Or try it out first with demo data:</p>
+          <button class="btn btn-outline" onclick="runDemo()">Try Demo (No Key Needed)</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // ── STEP: UPLOAD ──
+  else if (state.step === 'upload') {
+    html += `
+      <div style="max-width:660px;margin:36px auto;">
+        <h2 style="font-size:24px;text-align:center;margin-bottom:6px;">Upload a Floorplan</h2>
+        <p style="color:var(--gray-500);text-align:center;font-size:14px;margin-bottom:28px;">
+          Take a photo or upload an image of the floorplan. Works with blueprints, real estate layouts, and even hand sketches.
+        </p>
+        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click();">
+          <svg width="44" height="44" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+          <h3>Tap here to upload a floorplan</h3>
+          <p>or drag and drop — PNG, JPG, WEBP, or PDF</p>
+        </div>
+        <input type="file" id="fileInput" accept="image/*,.pdf" style="display:none;" onchange="handleFile(this.files[0])" />
+        <div style="text-align:center;margin:20px 0;">
+          <span style="color:var(--gray-400);font-size:13px;">— or —</span>
+        </div>
+        <div style="text-align:center;">
+          <button class="btn btn-outline" onclick="runDemo()">Try with Demo Floorplan</button>
+        </div>
+        ${state.apiKeyValid ? `<p style="text-align:center;margin-top:20px;font-size:12px;color:var(--green);">✓ API key connected</p>` : ''}
+      </div>
+    `;
+  }
+
+  // ── STEP: ANALYZING ──
+  else if (state.step === 'analyzing') {
+    html += `
+      <div style="max-width:560px;margin:36px auto;text-align:center;">
+        <h2 style="font-size:22px;margin-bottom:20px;">Analyzing Floorplan...</h2>
+        ${state.floorplanImg ? `<div class="floorplan-preview"><img src="${state.floorplanImg}" alt="Floorplan" /></div>` : ''}
+        <div class="card">
+          <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${state.analysisProgress}%"></div></div>
+          <div style="text-align:left;">
+            ${state.analysisSteps.map((s, i) => {
+              const isCurrent = i === state.analysisSteps.length - 1 && state.analysisProgress < 100;
+              return `<div class="analysis-step ${isCurrent ? 'current' : ''}">
+                ${isCurrent
+                  ? '<svg class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>'
+                  : '<span class="done">✓</span>'}
+                ${s}
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ── STEP: ROOMS ──
+  else if (state.step === 'rooms') {
+    const totalSqft = state.rooms.reduce((s,r) => s + (r.estimated_sqft||0), 0);
+    html += `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div>
+          <h2 style="font-size:22px;">Room Analysis</h2>
+          <p style="color:var(--gray-500);font-size:13px;">AI detected ${state.rooms.length} rooms — ${totalSqft.toLocaleString()} sq ft total. Edit anything that looks off.</p>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline btn-sm" onclick="addRoom()">+ Add Room</button>
+          <button class="btn btn-primary" onclick="goToEstimate()">Generate Estimate →</button>
+        </div>
+      </div>
+      <div class="room-grid">
+        ${state.rooms.map((room, idx) => `
+          <div class="room-card">
+            <div class="room-card-header">
+              <input value="${esc(room.name)}" onchange="updateRoom(${idx},'name',this.value)" />
+              <button class="icon-btn" onclick="removeRoom(${idx})" title="Remove">🗑</button>
+            </div>
+            <div class="fields">
+              <div class="field">
+                <label>Type</label>
+                <select onchange="updateRoom(${idx},'type',this.value)">
+                  ${ROOM_TYPES.map(t => `<option value="${t}" ${t===room.type?'selected':''}>${t.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</option>`).join('')}
+                </select>
+              </div>
+              <div class="field">
+                <label>Sq Ft</label>
+                <input type="number" value="${room.estimated_sqft||0}" onchange="updateRoom(${idx},'estimated_sqft',+this.value)" />
+              </div>
+              <div class="field">
+                <label>Windows</label>
+                <input type="number" value="${room.window_count||0}" onchange="updateRoom(${idx},'window_count',+this.value)" />
+              </div>
+              <div class="field">
+                <label>Ext. Walls</label>
+                <input type="number" value="${room.exterior_walls||0}" onchange="updateRoom(${idx},'exterior_walls',+this.value)" />
+              </div>
+            </div>
+            <div class="room-meta">
+              <span>${room.width_ft||'?'}' × ${room.length_ft||'?'}'</span>
+              <span>·</span>
+              <span>${((room.estimated_sqft||0) * (LOAD_FACTORS[room.type]||LOAD_FACTORS.bedroom).btu).toLocaleString()} BTU</span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  // ── STEP: BOM / ESTIMATE ──
+  else if (state.step === 'bom' && state.bom) {
+    const bom = state.bom;
+    const sum = bom.summary;
+    const matTotal = bom.items.reduce((s,i) => s + i.price * i.qty, 0);
+    const labor = state.laborRate * state.laborHours;
+    const subtotal = matTotal + labor;
+    const markup = subtotal * (state.profitMargin / 100);
+    const total = subtotal + markup;
+
+    // Group items by category
+    const cats = {};
+    bom.items.forEach(item => { if (!cats[item.category]) cats[item.category] = []; cats[item.category].push(item); });
+
+    html += `
+      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div>
+          <input value="${esc(state.projectName)}" onchange="state.projectName=this.value" style="font-size:22px;font-weight:700;border:none;background:transparent;width:360px;color:var(--gray-800);" />
+          <div style="display:flex;gap:14px;margin-top:3px;font-size:12px;color:var(--gray-500);">
+            <span>System: <b>${sum.tonnage} Ton</b></span>
+            <span>Load: <b>${sum.designBTU.toLocaleString()} BTU</b></span>
+            <span>Airflow: <b>${sum.totalCFM} CFM</b></span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;" class="no-print">
+          <button class="btn btn-outline btn-sm" onclick="state.step='rooms';state.bom=null;render();">← Rooms</button>
+          <button class="btn btn-green btn-sm" onclick="showRFQModal()">📋 Export RFQ</button>
+          <button class="btn btn-outline btn-sm" onclick="window.print()">🖨 Print</button>
+          <button class="btn btn-outline btn-sm" onclick="startOver()">New Estimate</button>
+        </div>
+      </div>
+
+      <div class="bom-layout">
+        <div>
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;" class="no-print">
+            <input placeholder="Customer name..." value="${esc(state.customerName)}" onchange="state.customerName=this.value" style="padding:5px 10px;border-radius:8px;border:1px solid var(--gray-200);font-size:12px;width:180px;" />
+            <span style="font-size:11px;color:var(--gray-400);">${new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</span>
+          </div>
+
+          ${Object.entries(cats).map(([cat, items]) => {
+            const catTotal = items.reduce((s,i) => s + i.price * i.qty, 0);
+            return `
+              <div class="bom-category">${cat}</div>
+              ${items.map(item => {
+                const gi = bom.items.indexOf(item);
+                return `
+                  <div class="bom-row">
+                    <div>
+                      <div class="name">${item.name}</div>
+                      <div class="meta">${item.supplier} · ${item.sku}</div>
+                    </div>
+                    <div style="text-align:center;color:var(--gray-500);">${item.unit}</div>
+                    <div><input type="number" value="${item.qty}" onchange="updateBomQty(${gi},+this.value)" /></div>
+                    <div><input type="number" step="0.01" value="${item.price}" onchange="updateBomPrice(${gi},+this.value)" style="text-align:right;" /></div>
+                    <div style="text-align:right;font-weight:600;">${fmt(item.price * item.qty)}</div>
+                    <div><button class="icon-btn" onclick="removeBomItem(${gi})">✕</button></div>
+                  </div>
+                `;
+              }).join('')}
+              <div class="bom-cat-total">${fmt(catTotal)}</div>
+            `;
+          }).join('')}
+        </div>
+
+        <div class="summary-panel">
+          <div class="summary-card no-print">
+            <h3>Estimate Builder</h3>
+            <div class="slider-wrap">
+              <label>Profit Margin</label>
+              <div class="slider-row">
+                <input type="range" min="10" max="60" value="${state.profitMargin}" oninput="state.profitMargin=+this.value;render();" />
+                <span class="val">${state.profitMargin}%</span>
+              </div>
+            </div>
+            <div class="small-inputs">
+              <div><label>Labor Rate ($/hr)</label><input type="number" value="${state.laborRate}" onchange="state.laborRate=+this.value;render();" /></div>
+              <div><label>Est. Hours</label><input type="number" value="${state.laborHours}" onchange="state.laborHours=+this.value;render();" /></div>
+            </div>
+          </div>
+
+          <div class="summary-card">
+            <h3>Estimate Summary</h3>
+            <div class="summary-row"><span>Materials</span><span class="val">${fmt(matTotal)}</span></div>
+            <div class="summary-row"><span>Labor (${state.laborHours}h × ${fmtShort(state.laborRate)})</span><span class="val">${fmt(labor)}</span></div>
+            <div class="summary-row"><span>Subtotal</span><span class="val">${fmt(subtotal)}</span></div>
+            <div class="summary-row"><span>Markup (${state.profitMargin}%)</span><span class="val" style="color:var(--teal);">+${fmt(markup)}</span></div>
+            <div class="summary-row total"><span>Total</span><span class="val">${fmt(total)}</span></div>
+          </div>
+
+          <div class="profit-card">
+            <h4>Profit Snapshot</h4>
+            <div class="big">${fmt(markup)}</div>
+            <div class="sub">estimated profit on this job</div>
+            <div class="profit-stats">
+              <div class="profit-stat"><div class="label">Cost/sq ft</div><div class="val">${fmt(total / Math.max(sum.condSqft,1))}</div></div>
+              <div class="profit-stat"><div class="label">Revenue/hr</div><div class="val">${fmt(total / Math.max(state.laborHours,1))}</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  html += '</div>';
+
+  // ── RFQ MODAL ──
+  if (state.showRFQ && state.bom) {
+    const rfqText = generateRFQText(state.bom, state);
+    html += `
+      <div class="modal-overlay" onclick="if(event.target===this){state.showRFQ=false;render();}">
+        <div class="modal">
+          <h2>📋 Request for Quote</h2>
+          <p style="font-size:13px;color:var(--gray-500);margin-bottom:12px;">Copy this and email it to your supplier, or download the CSV for them to fill in.</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+            <div class="field"><label>Your Company</label><input value="${esc(state.companyName)}" onchange="state.companyName=this.value;render();" /></div>
+            <div class="field"><label>Your Email</label><input value="${esc(state.companyEmail)}" onchange="state.companyEmail=this.value;render();" /></div>
+            <div class="field"><label>Your Phone</label><input value="${esc(state.companyPhone)}" onchange="state.companyPhone=this.value;render();" /></div>
+            <div class="field"><label>Supplier Name</label><input value="${esc(state.supplierName)}" onchange="state.supplierName=this.value;render();" /></div>
+          </div>
+          <pre id="rfqText">${esc(rfqText)}</pre>
+          <div class="modal-actions">
+            <button class="btn btn-outline btn-sm" onclick="state.showRFQ=false;render();">Close</button>
+            <button class="btn btn-outline btn-sm" onclick="downloadCSV()">⬇ Download CSV</button>
+            <button class="btn btn-primary btn-sm" onclick="copyRFQ()">📋 Copy to Clipboard</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  app.innerHTML = html;
+
+  // Setup drag-and-drop after render
+  const zone = document.getElementById('uploadZone');
+  if (zone) {
+    zone.ondragover = (e) => { e.preventDefault(); zone.classList.add('dragover'); };
+    zone.ondragleave = () => zone.classList.remove('dragover');
+    zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove('dragover'); handleFile(e.dataTransfer.files[0]); };
+  }
+}
+
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── ACTION HANDLERS ──
+
+function saveApiKey() {
+  const input = document.getElementById('apiKeyInput');
+  const key = input.value.trim();
+  if (!key.startsWith('sk-')) {
+    state.error = 'API key should start with "sk-". Check your key and try again.';
+    render();
+    return;
+  }
+  state.apiKey = key;
+  state.apiKeyValid = true;
+  state.step = 'upload';
+  try { sessionStorage.setItem('hvac_api_key', key); } catch(e) {}
+  render();
+}
+
+async function handleFile(file) {
+  if (!file) return;
+  state.fileName = file.name;
+  state.error = null;
+
+  const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+  // Start analysis
+  state.step = 'analyzing';
+  state.analysisProgress = 0;
+  state.analysisSteps = [];
+
+  const steps = isPDF ? [
+    'Converting PDF to image...',
+    'Uploading floorplan...',
+    'Detecting walls and room boundaries...',
+    'Identifying room types...',
+    'Measuring dimensions...',
+    'Computing heat load requirements...',
+    'Generating room report...',
+  ] : [
+    'Uploading floorplan image...',
+    'Detecting walls and room boundaries...',
+    'Identifying room types...',
+    'Measuring dimensions...',
+    'Computing heat load requirements...',
+    'Generating room report...',
+  ];
+
+  render();
+
+  // Animate steps while API call runs
+  let stepIdx = 0;
+  const stepTimer = setInterval(() => {
+    if (stepIdx < steps.length - 1) {
+      state.analysisSteps.push(steps[stepIdx]);
+      state.analysisProgress = Math.round(((stepIdx + 1) / steps.length) * 80);
+      stepIdx++;
+      render();
+    }
+  }, 800);
+
+  try {
+    let base64, mediaType;
+
+    if (isPDF) {
+      // Convert PDF to image first
+      const pdfResult = await pdfToImage(file);
+      base64 = pdfResult.base64;
+      mediaType = pdfResult.mediaType;
+      state.floorplanImg = pdfResult.previewUrl;
+      render();
+    } else {
+      const imgData = await fileToBase64(file);
+      base64 = imgData.base64;
+      mediaType = imgData.mediaType;
+      // Show preview
+      const reader = new FileReader();
+      reader.onload = (e) => { state.floorplanImg = e.target.result; render(); };
+      reader.readAsDataURL(file);
+    }
+
+    const result = await callClaudeVision(state.apiKey, base64, mediaType);
+
+    clearInterval(stepTimer);
+
+    // Complete all steps
+    state.analysisSteps = steps.map(s => s);
+    state.analysisProgress = 100;
+    state.analysisResult = result;
+    state.rooms = result.rooms || [];
+    render();
+
+    // Brief pause then show rooms
+    setTimeout(() => {
+      state.step = 'rooms';
+      // Auto-set labor hours based on sqft
+      const sqft = state.rooms.reduce((s,r) => s + (r.estimated_sqft||0), 0);
+      state.laborHours = sqft > 2000 ? 24 : sqft > 1500 ? 20 : 16;
+      render();
+    }, 600);
+
+  } catch (err) {
+    clearInterval(stepTimer);
+    state.error = err.message;
+    state.step = 'upload';
+    render();
+  }
+}
+
+function runDemo() {
+  state.analysisResult = {
+    floorplan_type: "real_estate_layout",
+    confidence: "high",
+    building: { stories: 1, total_sqft: 1620, has_garage: true, building_shape: "rectangle" },
+    rooms: [
+      { name: "Living Room", type: "living_room", floor: 1, estimated_sqft: 320, width_ft: 20, length_ft: 16, window_count: 3, exterior_walls: 2, ceiling_height: 9, notes: "Open to kitchen" },
+      { name: "Kitchen", type: "kitchen", floor: 1, estimated_sqft: 195, width_ft: 13, length_ft: 15, window_count: 2, exterior_walls: 1, ceiling_height: 9, notes: "" },
+      { name: "Dining Room", type: "dining_room", floor: 1, estimated_sqft: 145, width_ft: 11, length_ft: 13, window_count: 1, exterior_walls: 1, ceiling_height: 9, notes: "" },
+      { name: "Master Bedroom", type: "master_bedroom", floor: 1, estimated_sqft: 275, width_ft: 16, length_ft: 17, window_count: 2, exterior_walls: 2, ceiling_height: 8, notes: "En-suite bath" },
+      { name: "Bedroom 2", type: "bedroom", floor: 1, estimated_sqft: 165, width_ft: 12, length_ft: 14, window_count: 1, exterior_walls: 1, ceiling_height: 8, notes: "" },
+      { name: "Bedroom 3", type: "bedroom", floor: 1, estimated_sqft: 150, width_ft: 12, length_ft: 12.5, window_count: 1, exterior_walls: 1, ceiling_height: 8, notes: "" },
+      { name: "Master Bath", type: "bathroom", floor: 1, estimated_sqft: 75, width_ft: 8, length_ft: 9.4, window_count: 1, exterior_walls: 1, ceiling_height: 8, notes: "" },
+      { name: "Hall Bath", type: "bathroom", floor: 1, estimated_sqft: 55, width_ft: 7, length_ft: 7.9, window_count: 1, exterior_walls: 1, ceiling_height: 8, notes: "" },
+      { name: "Hallway", type: "hallway", floor: 1, estimated_sqft: 65, width_ft: 4, length_ft: 16, window_count: 0, exterior_walls: 0, ceiling_height: 8, notes: "" },
+      { name: "Laundry", type: "laundry", floor: 1, estimated_sqft: 50, width_ft: 6, length_ft: 8.3, window_count: 0, exterior_walls: 1, ceiling_height: 8, notes: "" },
+      { name: "Foyer", type: "foyer", floor: 1, estimated_sqft: 45, width_ft: 6, length_ft: 7.5, window_count: 0, exterior_walls: 1, ceiling_height: 9, notes: "" },
+    ],
+    hvac_notes: { suggested_equipment_location: "attic", suggested_zones: 1, special_considerations: ["9ft ceilings in living areas", "South-facing picture window"] },
+  };
+  state.rooms = state.analysisResult.rooms;
+  state.laborHours = 18;
+  state.step = 'rooms';
+  state.error = null;
+  render();
+}
+
+function updateRoom(idx, field, value) { state.rooms[idx][field] = value; render(); }
+function removeRoom(idx) { state.rooms.splice(idx, 1); render(); }
+function addRoom() {
+  state.rooms.push({ name: "New Room", type: "bedroom", floor: 1, estimated_sqft: 150, width_ft: 12, length_ft: 12.5, window_count: 1, exterior_walls: 1, ceiling_height: 8, notes: "" });
+  render();
+}
+
+function goToEstimate() {
+  const building = state.analysisResult?.building || {};
+  const hvac = state.analysisResult?.hvac_notes || {};
+  state.bom = generateBOM(state.rooms, building, hvac);
+  state.step = 'bom';
+  render();
+}
+
+function updateBomQty(idx, val) { state.bom.items[idx].qty = Math.max(0, val); render(); }
+function updateBomPrice(idx, val) { state.bom.items[idx].price = Math.max(0, val); render(); }
+function removeBomItem(idx) { state.bom.items.splice(idx, 1); render(); }
+
+function startOver() {
+  state.step = state.apiKeyValid ? 'upload' : 'setup';
+  state.floorplanImg = null;
+  state.rooms = [];
+  state.bom = null;
+  state.analysisResult = null;
+  state.error = null;
+  render();
+}
+
+function showRFQModal() { state.showRFQ = true; render(); }
+
+function copyRFQ() {
+  const text = document.getElementById('rfqText')?.innerText;
+  if (text) { navigator.clipboard.writeText(text); }
+  alert('RFQ copied to clipboard! Paste it into an email to your supplier.');
+}
+
+function downloadCSV() {
+  const csv = generateRFQCSV(state.bom);
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `RFQ_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Initial render
+render();
+</script>
+</body>
+</html>
