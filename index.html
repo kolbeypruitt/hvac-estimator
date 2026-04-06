@@ -284,39 +284,56 @@ const LOAD_FACTORS = {
 const ROOM_TYPES = Object.keys(LOAD_FACTORS);
 
 // ── CLAUDE VISION PROMPT ──
-const SYSTEM_PROMPT = `You are an expert HVAC load calculation engineer and architectural plan reader. Your job is to analyze floorplan images and extract structured data for HVAC system design. You have 20+ years of experience reading both detailed architectural blueprints and simple real estate listing floorplans.`;
+const SYSTEM_PROMPT = `You are an expert HVAC load calculation engineer and architectural plan reader with 20+ years experience. Your job is to analyze floorplan images and extract structured room data for HVAC system design.
 
-const ANALYSIS_PROMPT = `Analyze this floorplan image carefully and extract all room information for HVAC system design.
+CRITICAL RULES FOR READING PLANS:
+1. ALWAYS read dimension annotations on the drawing (e.g., 16'-0", 8'-6") — these are the actual measurements. Never guess dimensions when they are written on the plan.
+2. If the drawing states total sqft (e.g., "1,024 SQ.FT. HEATED PER UNIT"), use that as your anchor and make sure individual room areas add up to approximately that total.
+3. For MULTI-UNIT buildings (duplexes, triplexes, etc.): analyze ONE unit only, since the units are mirrored/identical. Note the number of units in the building info.
+4. If multiple drawings appear in the image (floor plans, elevations, roof plans, foundation plans, detail sections), ONLY extract rooms from the FLOOR PLANS. Ignore elevations, roof plans, foundation plans, and construction details.
+5. Look for scale notations (e.g., "SCALE: 1/4" = 1'-0"") to understand relative proportions.
+6. Identify which floor each room is on — first floor, second floor, etc.`;
 
-For EACH room you can identify, extract:
-- name: The room label (e.g., "Master Bedroom", "Kitchen")
+const ANALYSIS_PROMPT = `Analyze this floorplan image carefully for HVAC system design.
+
+STEP 1 — UNDERSTAND THE DRAWING:
+- Identify what type of building this is (single-family, duplex, triplex, apartment, commercial)
+- Identify how many separate floor plan drawings are shown (ignore elevations, roof plans, foundation plans, section details)
+- Look for text annotations showing total square footage (e.g., "1,024 SQ.FT. HEATED PER UNIT")
+- Look for the scale notation (e.g., "SCALE: 1/4" = 1'-0"")
+
+STEP 2 — READ DIMENSIONS CAREFULLY:
+- Find and read ALL dimension lines/annotations on the floor plans (e.g., "16'-0"", "8'-6"", "12'")
+- Use the OVERALL building dimensions to calculate total sqft, then verify individual rooms add up
+- For each room: read the width and length from dimension annotations if available
+- If a room has no direct dimensions, calculate it from surrounding dimensions or the overall layout
+
+STEP 3 — FOR MULTI-UNIT BUILDINGS (duplexes, etc.):
+- Analyze ONE unit only (the units are typically mirrored/identical)
+- Report the number of units in building.units
+- total_sqft should be for ONE unit only
+
+STEP 4 — EXTRACT EACH ROOM:
+For each room, provide:
+- name: Room label from the drawing (e.g., "Living", "Kitchen", "Bedroom #1")
 - type: One of: master_bedroom, bedroom, living_room, family_room, kitchen, dining_room, bathroom, half_bath, hallway, laundry, office, garage, basement, closet, foyer, sunroom, bonus_room
-- estimated_sqft: Best estimate of square footage (calculate from dimensions if marked, otherwise estimate from proportions)
-- width_ft: Estimated width in feet
-- length_ft: Estimated length in feet
-- window_count: Number of windows visible (estimate if unclear)
-- exterior_walls: Number of exterior walls (0-4)
-- ceiling_height: Assume 8ft unless indicated otherwise (vaulted, 9ft, 10ft)
-- notes: Special characteristics
-
-Also provide building info:
-- stories: Number of stories (1, 1.5, 2, 3)
-- total_sqft: Total conditioned sqft (exclude garage)
-- has_garage: true/false
-- building_shape: rectangle, L-shape, U-shape, irregular
-
-And HVAC notes:
-- suggested_equipment_location: attic, basement, garage, closet, crawlspace
-- suggested_zones: number
-- special_considerations: array of notes
+- floor: Which floor (1, 2, etc.)
+- estimated_sqft: Width × Length (from dimension annotations)
+- width_ft: Width in feet (from dimensions on the plan)
+- length_ft: Length in feet (from dimensions on the plan)
+- window_count: Count windows shown in floor plan
+- exterior_walls: Count of walls that face outside (0-4)
+- ceiling_height: 8 unless noted otherwise
+- notes: Any special characteristics (e.g., "carpet", "vinyl", "vaulted ceiling")
 
 Return ONLY valid JSON (no markdown fences):
 {
   "floorplan_type": "architectural_blueprint | real_estate_layout | hand_sketch | construction_drawing",
   "confidence": "high | medium | low",
   "building": {
-    "stories": 1,
-    "total_sqft": 1800,
+    "stories": 2,
+    "total_sqft": 1024,
+    "units": 1,
     "has_garage": true,
     "building_shape": "rectangle"
   },
@@ -325,13 +342,13 @@ Return ONLY valid JSON (no markdown fences):
       "name": "Living Room",
       "type": "living_room",
       "floor": 1,
-      "estimated_sqft": 320,
-      "width_ft": 20.0,
+      "estimated_sqft": 256,
+      "width_ft": 16.0,
       "length_ft": 16.0,
       "window_count": 3,
       "exterior_walls": 2,
       "ceiling_height": 8,
-      "notes": ""
+      "notes": "carpet"
     }
   ],
   "hvac_notes": {
@@ -339,15 +356,17 @@ Return ONLY valid JSON (no markdown fences):
     "suggested_zones": 1,
     "special_considerations": []
   },
-  "analysis_notes": "Your observations"
+  "analysis_notes": "Your step-by-step dimension reading and observations"
 }
 
 RULES:
-- Always provide your BEST estimate even if image is unclear
-- Do NOT include garages in conditioned sqft
-- Do NOT skip small rooms (closets, laundry, half baths)
-- If multiple floors, include ALL rooms with correct floor number
-- Set confidence to "low" if image quality is poor`;
+- READ the dimension annotations on the drawing — do not guess when measurements are shown
+- Verify: sum of all room sqft should approximately equal total_sqft
+- Do NOT include garages, patios, or unconditioned spaces in total_sqft
+- Do NOT skip small rooms (closets, laundry, half baths, hallways, stairs)
+- Include ALL rooms across ALL floors with correct floor number
+- For duplexes/multi-unit: only analyze ONE unit
+- Set confidence to "low" if image quality is poor or dimensions are unreadable`;
 
 
 // ── HELPER FUNCTIONS ──
@@ -374,11 +393,13 @@ async function pdfToImage(file) {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
-  // Render all pages into a single tall image (or just first page if many)
-  const pageCount = Math.min(pdf.numPages, 3); // max 3 pages
+  // Render floor plan pages (skip title pages, limit to 3 content pages)
+  const totalPages = pdf.numPages;
+  const startPage = totalPages > 1 ? 2 : 1; // skip title page if multi-page
+  const endPage = Math.min(totalPages, startPage + 2); // max 3 content pages
   const canvases = [];
 
-  for (let i = 1; i <= pageCount; i++) {
+  for (let i = startPage; i <= endPage; i++) {
     const page = await pdf.getPage(i);
     const scale = 1.5; // balanced res for AI analysis
     const viewport = page.getViewport({ scale });
