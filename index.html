@@ -373,7 +373,7 @@ Return ONLY valid JSON (no markdown fences):
     "suggested_zones": 1,
     "special_considerations": []
   },
-  "analysis_notes": "Your step-by-step dimension reading and observations"
+  "analysis_notes": "Brief notes about dimension reading"
 }
 
 RULES:
@@ -383,7 +383,9 @@ RULES:
 - Do NOT skip small rooms (closets, laundry, half baths, hallways, stairs)
 - Include ALL rooms across ALL floors with correct floor number
 - For duplexes/multi-unit: only analyze ONE unit
-- Set confidence to "low" if image quality is poor or dimensions are unreadable`;
+- Set confidence to "low" if image quality is poor or dimensions are unreadable
+
+CRITICAL: Your ENTIRE response must be valid JSON and nothing else. No explanation, no preamble, no markdown. Start with { and end with }.`;
 
 
 // ── HELPER FUNCTIONS ──
@@ -525,7 +527,21 @@ async function callClaudeVision(apiKey, imageBase64OrArray, mediaType) {
     text = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
   }
 
-  return JSON.parse(text);
+  // Extract JSON object even if AI added text before/after it
+  if (!text.startsWith('{')) {
+    const jsonStart = text.indexOf('{');
+    const jsonEnd = text.lastIndexOf('}');
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      text = text.substring(jsonStart, jsonEnd + 1);
+    }
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    console.error('Failed to parse AI response:', text.substring(0, 200));
+    throw new Error('AI returned invalid data. Please try again.');
+  }
 }
 
 // ── BOM GENERATION ──
