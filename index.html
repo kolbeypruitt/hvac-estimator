@@ -194,8 +194,23 @@ const state = {
   error: null,
 };
 
-// Check for saved API key
-const savedKey = (() => { try { return sessionStorage.getItem('hvac_api_key') || ''; } catch(e) { return ''; } })();
+// Check for API key: URL hash (#key=...) > sessionStorage > manual entry
+const savedKey = (() => {
+  try {
+    // Check URL hash first (e.g. #key=sk-ant-xxx)
+    const hash = window.location.hash;
+    if (hash.includes('key=')) {
+      const key = hash.split('key=')[1].split('&')[0];
+      if (key) {
+        sessionStorage.setItem('hvac_api_key', key);
+        // Clean the key from URL bar so it's not visible
+        history.replaceState(null, '', window.location.pathname);
+        return key;
+      }
+    }
+    return sessionStorage.getItem('hvac_api_key') || '';
+  } catch(e) { return ''; }
+})();
 if (savedKey) { state.apiKey = savedKey; state.apiKeyValid = true; state.step = 'upload'; }
 
 // ── PARTS DATABASE ──
