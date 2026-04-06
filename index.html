@@ -144,6 +144,19 @@
   .floorplan-preview { max-height: 180px; border-radius: 10px; overflow: hidden; border: 1px solid var(--gray-200); margin-bottom: 16px; }
   .floorplan-preview img { width: 100%; object-fit: cover; max-height: 180px; }
 
+  /* PDF Page Selector */
+  .page-selector { margin-bottom: 20px; }
+  .page-selector h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .page-selector p { font-size: 13px; color: var(--gray-500); margin-bottom: 12px; }
+  .page-thumbs { display: flex; gap: 12px; overflow-x: auto; padding: 4px 0; }
+  .page-thumb { position: relative; cursor: pointer; border-radius: 10px; overflow: hidden; border: 3px solid var(--gray-200); transition: all .2s; flex-shrink: 0; width: 160px; }
+  .page-thumb:hover { border-color: var(--teal-light); }
+  .page-thumb.selected { border-color: var(--teal); box-shadow: 0 0 0 2px rgba(15,118,110,.25); }
+  .page-thumb img { width: 100%; display: block; }
+  .page-thumb-label { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,.65); color: #fff; font-size: 11px; font-weight: 600; padding: 4px 8px; text-align: center; }
+  .page-thumb-check { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%; background: var(--teal); color: #fff; display: none; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+  .page-thumb.selected .page-thumb-check { display: flex; }
+
   /* Error */
   .error-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 14px 18px; color: #991b1b; font-size: 13px; margin-bottom: 16px; }
 
@@ -192,6 +205,10 @@ const state = {
   editingPrice: null,
   showRFQ: false,
   error: null,
+  // PDF page selection
+  pdfPages: [],       // array of { pageNum, previewUrl, base64, mediaType }
+  selectedPages: [],  // array of page numbers the user selected
+  pendingPdfFile: null, // the file object awaiting page selection
 };
 
 // Check for API key: URL hash (#key=...) > sessionStorage > manual entry
@@ -386,78 +403,96 @@ function fileToBase64(file) {
   });
 }
 
-// Convert PDF to PNG image using pdf.js
-async function pdfToImage(file) {
+// Convert a single canvas to JPEG base64 within size limit
+function canvasToJpegBase64(canvas, maxBytes = 4500000) {
+  let quality = 0.92;
+  let dataUrl = canvas.toDataURL('image/jpeg', quality);
+  let base64 = dataUrl.split(',')[1];
+
+  while (base64.length * 0.75 > maxBytes && quality > 0.3) {
+    quality -= 0.1;
+    dataUrl = canvas.toDataURL('image/jpeg', quality);
+    base64 = dataUrl.split(',')[1];
+  }
+
+  if (base64.length * 0.75 > maxBytes) {
+    const small = document.createElement('canvas');
+    small.width = Math.round(canvas.width * 0.7);
+    small.height = Math.round(canvas.height * 0.7);
+    const sctx = small.getContext('2d');
+    sctx.drawImage(canvas, 0, 0, small.width, small.height);
+    dataUrl = small.toDataURL('image/jpeg', 0.7);
+    base64 = dataUrl.split(',')[1];
+  }
+
+  return { base64, dataUrl };
+}
+
+// Render ALL PDF pages as thumbnails (low-res for preview) + store for hi-res later
+async function pdfToPagePreviews(file) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pages = [];
 
-  // Render floor plan pages (skip title pages, limit to 3 content pages)
-  const totalPages = pdf.numPages;
-  const startPage = totalPages > 1 ? 2 : 1; // skip title page if multi-page
-  const endPage = Math.min(totalPages, startPage + 2); // max 3 content pages
-  const canvases = [];
-
-  for (let i = startPage; i <= endPage; i++) {
+  for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
-    const scale = 1.5; // balanced res for AI analysis
+    // Low-res thumbnail for preview
+    const thumbScale = 0.8;
+    const thumbVp = page.getViewport({ scale: thumbScale });
+    const thumbCanvas = document.createElement('canvas');
+    thumbCanvas.width = thumbVp.width;
+    thumbCanvas.height = thumbVp.height;
+    await page.render({ canvasContext: thumbCanvas.getContext('2d'), viewport: thumbVp }).promise;
+    const thumbUrl = thumbCanvas.toDataURL('image/jpeg', 0.6);
+
+    pages.push({ pageNum: i, previewUrl: thumbUrl, base64: null, mediaType: 'image/jpeg' });
+  }
+
+  return { pages, pdf };
+}
+
+// Render selected pages at high resolution for API
+async function renderSelectedPages(file, selectedPageNums) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const images = [];
+
+  for (const pageNum of selectedPageNums) {
+    const page = await pdf.getPage(pageNum);
+    const scale = 2.0; // high res for AI dimension reading
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     const ctx = canvas.getContext('2d');
     await page.render({ canvasContext: ctx, viewport }).promise;
-    canvases.push(canvas);
+
+    const { base64, dataUrl } = canvasToJpegBase64(canvas);
+    images.push({ base64, mediaType: 'image/jpeg', previewUrl: dataUrl, pageNum });
   }
 
-  // Stitch pages vertically into one image
-  const totalHeight = canvases.reduce((h, c) => h + c.height, 0);
-  const maxWidth = Math.max(...canvases.map(c => c.width));
-  const merged = document.createElement('canvas');
-  merged.width = maxWidth;
-  merged.height = totalHeight;
-  const mctx = merged.getContext('2d');
-  let yOffset = 0;
-  for (const c of canvases) {
-    mctx.drawImage(c, 0, yOffset);
-    yOffset += c.height;
-  }
-
-  // Convert to JPEG base64 (much smaller than PNG)
-  // Try quality 0.85, if still over 4.5MB reduce further
-  let quality = 0.85;
-  let dataUrl = merged.toDataURL('image/jpeg', quality);
-  let base64 = dataUrl.split(',')[1];
-
-  // Check size and reduce quality if needed (4.5MB limit with safety margin)
-  while (base64.length * 0.75 > 4500000 && quality > 0.3) {
-    quality -= 0.15;
-    dataUrl = merged.toDataURL('image/jpeg', quality);
-    base64 = dataUrl.split(',')[1];
-  }
-
-  // If still too large, scale down the canvas
-  if (base64.length * 0.75 > 4500000) {
-    const smallCanvas = document.createElement('canvas');
-    smallCanvas.width = Math.round(merged.width * 0.6);
-    smallCanvas.height = Math.round(merged.height * 0.6);
-    const sctx = smallCanvas.getContext('2d');
-    sctx.drawImage(merged, 0, 0, smallCanvas.width, smallCanvas.height);
-    dataUrl = smallCanvas.toDataURL('image/jpeg', 0.7);
-    base64 = dataUrl.split(',')[1];
-  }
-
-  return {
-    base64,
-    mediaType: 'image/jpeg',
-    previewUrl: dataUrl,
-    pageCount: pdf.numPages,
-  };
+  return images;
 }
 
 // ── CLAUDE API CALL ──
-async function callClaudeVision(apiKey, imageBase64, mediaType) {
+// Accepts single image OR array of images
+async function callClaudeVision(apiKey, imageBase64OrArray, mediaType) {
+  // Build content array — support multiple images for multi-page PDFs
+  const content = [];
+  if (Array.isArray(imageBase64OrArray)) {
+    imageBase64OrArray.forEach((img, i) => {
+      content.push({ type: 'text', text: `--- Page ${img.pageNum || i + 1} of the floorplan ---` });
+      content.push({ type: 'image', source: { type: 'base64', media_type: img.mediaType || 'image/jpeg', data: img.base64 } });
+    });
+  } else {
+    content.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64OrArray } });
+  }
+  content.push({ type: 'text', text: ANALYSIS_PROMPT });
+
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -472,10 +507,7 @@ async function callClaudeVision(apiKey, imageBase64, mediaType) {
       system: SYSTEM_PROMPT,
       messages: [{
         role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
-          { type: 'text', text: ANALYSIS_PROMPT },
-        ],
+        content,
       }],
     }),
   });
@@ -676,7 +708,7 @@ function generateRFQCSV(bom) {
 function render() {
   const app = document.getElementById('app');
 
-  const stepIdx = { setup: 0, upload: 1, analyzing: 1, rooms: 2, bom: 3 }[state.step] || 0;
+  const stepIdx = { setup: 0, upload: 1, select_pages: 1, analyzing: 1, rooms: 2, bom: 3 }[state.step] || 0;
   const stepNames = ['Setup', 'Upload', 'Rooms', 'Estimate'];
 
   let html = `
@@ -742,6 +774,37 @@ function render() {
           <button class="btn btn-outline" onclick="runDemo()">Try with Demo Floorplan</button>
         </div>
         ${state.apiKeyValid ? `<p style="text-align:center;margin-top:20px;font-size:12px;color:var(--green);">✓ API key connected</p>` : ''}
+      </div>
+    `;
+  }
+
+  // ── STEP: SELECT PDF PAGES ──
+  else if (state.step === 'select_pages') {
+    html += `
+      <div style="max-width:800px;margin:36px auto;">
+        <h2 style="font-size:22px;text-align:center;margin-bottom:6px;">Select Floor Plan Pages</h2>
+        <p style="color:var(--gray-500);text-align:center;font-size:14px;margin-bottom:24px;">
+          Your PDF has ${state.pdfPages.length} pages. Select the page(s) that contain <strong>floor plans with room dimensions</strong>. Skip title pages, elevations, and detail sheets.
+        </p>
+        <div class="page-selector">
+          <div class="page-thumbs">
+            ${state.pdfPages.map((pg, i) => `
+              <div class="page-thumb ${state.selectedPages.includes(pg.pageNum) ? 'selected' : ''}" onclick="togglePage(${pg.pageNum})">
+                <img src="${pg.previewUrl}" alt="Page ${pg.pageNum}" />
+                <div class="page-thumb-label">Page ${pg.pageNum}</div>
+                <div class="page-thumb-check">✓</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        <div style="text-align:center;margin-top:24px;">
+          <button class="btn btn-primary" onclick="analyzeSelectedPages()" ${state.selectedPages.length === 0 ? 'disabled style="opacity:.5;cursor:not-allowed;"' : ''}>
+            Analyze ${state.selectedPages.length} Page${state.selectedPages.length !== 1 ? 's' : ''} →
+          </button>
+          <div style="margin-top:10px;">
+            <button class="btn btn-outline btn-sm" onclick="state.step='upload';state.pdfPages=[];state.selectedPages=[];render();">← Upload Different File</button>
+          </div>
+        </div>
       </div>
     `;
   }
@@ -982,38 +1045,36 @@ function saveApiKey() {
   render();
 }
 
-async function handleFile(file) {
-  if (!file) return;
-  state.fileName = file.name;
-  state.error = null;
+// Toggle a page in the selection
+function togglePage(pageNum) {
+  const idx = state.selectedPages.indexOf(pageNum);
+  if (idx >= 0) {
+    state.selectedPages.splice(idx, 1);
+  } else {
+    state.selectedPages.push(pageNum);
+    state.selectedPages.sort((a, b) => a - b);
+  }
+  render();
+}
 
-  const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+// Analyze the user-selected PDF pages
+async function analyzeSelectedPages() {
+  if (state.selectedPages.length === 0) return;
 
-  // Start analysis
   state.step = 'analyzing';
   state.analysisProgress = 0;
   state.analysisSteps = [];
-
-  const steps = isPDF ? [
-    'Converting PDF to image...',
-    'Uploading floorplan...',
+  const steps = [
+    'Rendering selected pages at high resolution...',
+    'Uploading floorplan pages...',
     'Detecting walls and room boundaries...',
+    'Reading dimension annotations...',
     'Identifying room types...',
-    'Measuring dimensions...',
-    'Computing heat load requirements...',
-    'Generating room report...',
-  ] : [
-    'Uploading floorplan image...',
-    'Detecting walls and room boundaries...',
-    'Identifying room types...',
-    'Measuring dimensions...',
     'Computing heat load requirements...',
     'Generating room report...',
   ];
-
   render();
 
-  // Animate steps while API call runs
   let stepIdx = 0;
   const stepTimer = setInterval(() => {
     if (stepIdx < steps.length - 1) {
@@ -1025,26 +1086,144 @@ async function handleFile(file) {
   }, 800);
 
   try {
-    let base64, mediaType;
+    // Render selected pages at high resolution
+    const images = await renderSelectedPages(state.pendingPdfFile, state.selectedPages);
+    state.floorplanImg = images[0]?.previewUrl || '';
+    render();
 
-    if (isPDF) {
-      // Convert PDF to image first
-      const pdfResult = await pdfToImage(file);
-      base64 = pdfResult.base64;
-      mediaType = pdfResult.mediaType;
-      state.floorplanImg = pdfResult.previewUrl;
-      render();
+    let imagePayload;
+    if (images.length > 1) {
+      imagePayload = images;
     } else {
-      const imgData = await fileToBase64(file);
-      base64 = imgData.base64;
-      mediaType = imgData.mediaType;
-      // Show preview
-      const reader = new FileReader();
-      reader.onload = (e) => { state.floorplanImg = e.target.result; render(); };
-      reader.readAsDataURL(file);
+      imagePayload = images[0].base64;
     }
 
-    const result = await callClaudeVision(state.apiKey, base64, mediaType);
+    const result = await callClaudeVision(state.apiKey, imagePayload, images[0]?.mediaType || 'image/jpeg');
+    clearInterval(stepTimer);
+    state.analysisSteps = steps.map(s => s);
+    state.analysisProgress = 100;
+    state.analysisResult = result;
+    state.rooms = (result.rooms || []).map((r, i) => ({ ...r, id: i }));
+    state.step = 'rooms';
+    state.pendingPdfFile = null;
+    render();
+  } catch (e) {
+    clearInterval(stepTimer);
+    state.error = e.message;
+    state.step = 'upload';
+    state.pdfPages = [];
+    state.selectedPages = [];
+    state.pendingPdfFile = null;
+    render();
+  }
+}
+
+async function handleFile(file) {
+  if (!file) return;
+  state.fileName = file.name;
+  state.error = null;
+
+  const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+  // For multi-page PDFs, show page selector first
+  if (isPDF) {
+    try {
+      state.step = 'analyzing';
+      state.analysisProgress = 0;
+      state.analysisSteps = ['Loading PDF pages...'];
+      render();
+
+      const { pages } = await pdfToPagePreviews(file);
+
+      if (pages.length > 1) {
+        // Show page selector — let user pick the right pages
+        state.pdfPages = pages;
+        state.selectedPages = []; // nothing pre-selected, user picks
+        state.pendingPdfFile = file;
+        state.step = 'select_pages';
+        render();
+        return; // wait for user to click "Analyze"
+      } else {
+        // Single-page PDF — analyze directly
+        const images = await renderSelectedPages(file, [1]);
+        state.floorplanImg = images[0].previewUrl;
+        state.step = 'analyzing';
+        state.analysisSteps = [];
+        state.analysisProgress = 0;
+        render();
+
+        const steps = [
+          'Uploading floorplan...',
+          'Detecting walls and room boundaries...',
+          'Identifying room types...',
+          'Measuring dimensions...',
+          'Computing heat load requirements...',
+          'Generating room report...',
+        ];
+        let stepIdx = 0;
+        const stepTimer = setInterval(() => {
+          if (stepIdx < steps.length - 1) {
+            state.analysisSteps.push(steps[stepIdx]);
+            state.analysisProgress = Math.round(((stepIdx + 1) / steps.length) * 80);
+            stepIdx++;
+            render();
+          }
+        }, 800);
+
+        const result = await callClaudeVision(state.apiKey, images[0].base64, 'image/jpeg');
+        clearInterval(stepTimer);
+        state.analysisSteps = steps.map(s => s);
+        state.analysisProgress = 100;
+        state.analysisResult = result;
+        state.rooms = (result.rooms || []).map((r, i) => ({ ...r, id: i }));
+        state.step = 'rooms';
+        render();
+        return;
+      }
+    } catch (e) {
+      state.error = e.message;
+      state.step = 'upload';
+      render();
+      return;
+    }
+  }
+
+  // Non-PDF image flow
+  state.step = 'analyzing';
+  state.analysisProgress = 0;
+  state.analysisSteps = [];
+
+  const steps = [
+    'Uploading floorplan image...',
+    'Detecting walls and room boundaries...',
+    'Identifying room types...',
+    'Measuring dimensions...',
+    'Computing heat load requirements...',
+    'Generating room report...',
+  ];
+
+  render();
+
+  let stepIdx = 0;
+  const stepTimer = setInterval(() => {
+    if (stepIdx < steps.length - 1) {
+      state.analysisSteps.push(steps[stepIdx]);
+      state.analysisProgress = Math.round(((stepIdx + 1) / steps.length) * 80);
+      stepIdx++;
+      render();
+    }
+  }, 800);
+
+  try {
+    const imgData = await fileToBase64(file);
+    const imagePayload = imgData.base64;
+    const mediaType = imgData.mediaType;
+    // Show preview
+    const reader = new FileReader();
+    reader.onload = (e) => { state.floorplanImg = e.target.result; render(); };
+    reader.readAsDataURL(file);
+
+    const result = await callClaudeVision(state.apiKey, imagePayload, mediaType);
 
     clearInterval(stepTimer);
 
