@@ -212,6 +212,7 @@ const state = {
   // User-provided building info (pre-analysis)
   knownTotalSqft: '',   // total heated sqft if known
   knownUnits: 1,        // number of units (1 for single-family, 2 for duplex, etc.)
+  hvacPerUnit: true,    // true = each unit gets its own system, false = shared system
 };
 
 // Check for API key: URL hash (#key=...) > sessionStorage > manual entry
@@ -505,6 +506,11 @@ async function callClaudeVision(apiKey, imageBase64OrArray, mediaType, buildingI
     }
     if (buildingInfo.units > 1) {
       promptExtra += `\nThis is a ${buildingInfo.units}-unit building. Analyze ONE unit only — the total sqft above is for ONE unit.`;
+      if (buildingInfo.hvacPerUnit) {
+        promptExtra += ` Each unit will have its own independent HVAC system.`;
+      } else {
+        promptExtra += ` All units share a single HVAC system. Size the system for the entire building (${buildingInfo.units} × the per-unit sqft).`;
+      }
     }
   }
 
@@ -801,7 +807,7 @@ function render() {
             </div>
             <div>
               <label style="display:block;font-size:12px;color:var(--gray-500);font-weight:500;margin-bottom:3px;">Number of Units</label>
-              <select onchange="state.knownUnits=+this.value" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--gray-300);font-size:14px;">
+              <select onchange="state.knownUnits=+this.value;render();" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--gray-300);font-size:14px;">
                 <option value="1" ${state.knownUnits===1?'selected':''}>1 — Single Family</option>
                 <option value="2" ${state.knownUnits===2?'selected':''}>2 — Duplex</option>
                 <option value="3" ${state.knownUnits===3?'selected':''}>3 — Triplex</option>
@@ -809,6 +815,22 @@ function render() {
               </select>
             </div>
           </div>
+          ${state.knownUnits > 1 ? `
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--gray-200);">
+            <label style="display:block;font-size:12px;color:var(--gray-500);font-weight:500;margin-bottom:6px;">HVAC System Configuration</label>
+            <div style="display:flex;gap:8px;">
+              <label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid ${state.hvacPerUnit ? 'var(--teal)' : 'var(--gray-300)'};background:${state.hvacPerUnit ? '#f0fdfa' : '#fff'};cursor:pointer;font-size:13px;font-weight:500;flex:1;justify-content:center;">
+                <input type="radio" name="hvacConfig" ${state.hvacPerUnit ? 'checked' : ''} onchange="state.hvacPerUnit=true;render();" style="accent-color:var(--teal);" />
+                Separate system per unit
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid ${!state.hvacPerUnit ? 'var(--teal)' : 'var(--gray-300)'};background:${!state.hvacPerUnit ? '#f0fdfa' : '#fff'};cursor:pointer;font-size:13px;font-weight:500;flex:1;justify-content:center;">
+                <input type="radio" name="hvacConfig" ${!state.hvacPerUnit ? 'checked' : ''} onchange="state.hvacPerUnit=false;render();" style="accent-color:var(--teal);" />
+                Shared system for all units
+              </label>
+            </div>
+            <p style="font-size:11px;color:var(--gray-400);margin-top:6px;">${state.hvacPerUnit ? 'Each unit gets its own condenser, air handler, and ductwork. Estimate is per unit.' : 'One larger system serves all units with shared ductwork. Estimate covers the entire building.'}</p>
+          </div>
+          ` : ''}
         </div>
         <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click();">
           <svg width="44" height="44" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
@@ -846,16 +868,16 @@ function render() {
             `).join('')}
           </div>
         </div>
-        <div class="card" style="max-width:480px;margin:20px auto 0;padding:18px 22px;">
+        <div class="card" style="max-width:520px;margin:20px auto 0;padding:18px 22px;">
           <h3 style="font-size:14px;font-weight:700;margin-bottom:12px;">Building Info <span style="font-weight:400;color:var(--gray-400);font-size:12px;">(helps AI get dimensions right)</span></h3>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div>
-              <label style="display:block;font-size:12px;color:var(--gray-500);font-weight:500;margin-bottom:3px;">Total Heated Sq Ft</label>
+              <label style="display:block;font-size:12px;color:var(--gray-500);font-weight:500;margin-bottom:3px;">Total Heated Sq Ft (per unit)</label>
               <input type="number" placeholder="e.g. 1024" value="${state.knownTotalSqft}" oninput="state.knownTotalSqft=this.value" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--gray-300);font-size:14px;" />
             </div>
             <div>
               <label style="display:block;font-size:12px;color:var(--gray-500);font-weight:500;margin-bottom:3px;">Number of Units</label>
-              <select onchange="state.knownUnits=+this.value" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--gray-300);font-size:14px;">
+              <select onchange="state.knownUnits=+this.value;render();" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--gray-300);font-size:14px;">
                 <option value="1" ${state.knownUnits===1?'selected':''}>1 — Single Family</option>
                 <option value="2" ${state.knownUnits===2?'selected':''}>2 — Duplex</option>
                 <option value="3" ${state.knownUnits===3?'selected':''}>3 — Triplex</option>
@@ -863,6 +885,22 @@ function render() {
               </select>
             </div>
           </div>
+          ${state.knownUnits > 1 ? `
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--gray-200);">
+            <label style="display:block;font-size:12px;color:var(--gray-500);font-weight:500;margin-bottom:6px;">HVAC System Configuration</label>
+            <div style="display:flex;gap:8px;">
+              <label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid ${state.hvacPerUnit ? 'var(--teal)' : 'var(--gray-300)'};background:${state.hvacPerUnit ? '#f0fdfa' : '#fff'};cursor:pointer;font-size:13px;font-weight:500;flex:1;justify-content:center;">
+                <input type="radio" name="hvacConfig2" ${state.hvacPerUnit ? 'checked' : ''} onchange="state.hvacPerUnit=true;render();" style="accent-color:var(--teal);" />
+                Separate system per unit
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid ${!state.hvacPerUnit ? 'var(--teal)' : 'var(--gray-300)'};background:${!state.hvacPerUnit ? '#f0fdfa' : '#fff'};cursor:pointer;font-size:13px;font-weight:500;flex:1;justify-content:center;">
+                <input type="radio" name="hvacConfig2" ${!state.hvacPerUnit ? 'checked' : ''} onchange="state.hvacPerUnit=false;render();" style="accent-color:var(--teal);" />
+                Shared system for all units
+              </label>
+            </div>
+            <p style="font-size:11px;color:var(--gray-400);margin-top:6px;">${state.hvacPerUnit ? 'Each unit gets its own condenser, air handler, and ductwork.' : 'One larger system serves all units with shared ductwork.'}</p>
+          </div>
+          ` : ''}
         </div>
         <div style="text-align:center;margin-top:20px;">
           <button class="btn btn-primary" onclick="analyzeSelectedPages()" ${state.selectedPages.length === 0 ? 'disabled style="opacity:.5;cursor:not-allowed;"' : ''}>
@@ -1171,7 +1209,7 @@ async function analyzeSelectedPages() {
       imagePayload = images[0].base64;
     }
 
-    const bldgInfo = { totalSqft: state.knownTotalSqft ? +state.knownTotalSqft : null, units: state.knownUnits || 1 };
+    const bldgInfo = { totalSqft: state.knownTotalSqft ? +state.knownTotalSqft : null, units: state.knownUnits || 1, hvacPerUnit: state.hvacPerUnit };
     const result = await callClaudeVision(state.apiKey, imagePayload, images[0]?.mediaType || 'image/jpeg', bldgInfo);
     clearInterval(stepTimer);
     state.analysisSteps = steps.map(s => s);
@@ -1244,7 +1282,7 @@ async function handleFile(file) {
           }
         }, 800);
 
-        const bldgInfo = { totalSqft: state.knownTotalSqft ? +state.knownTotalSqft : null, units: state.knownUnits || 1 };
+        const bldgInfo = { totalSqft: state.knownTotalSqft ? +state.knownTotalSqft : null, units: state.knownUnits || 1, hvacPerUnit: state.hvacPerUnit };
         const result = await callClaudeVision(state.apiKey, images[0].base64, 'image/jpeg', bldgInfo);
         clearInterval(stepTimer);
         state.analysisSteps = steps.map(s => s);
@@ -1298,7 +1336,7 @@ async function handleFile(file) {
     reader.onload = (e) => { state.floorplanImg = e.target.result; render(); };
     reader.readAsDataURL(file);
 
-    const bldgInfo = { totalSqft: state.knownTotalSqft ? +state.knownTotalSqft : null, units: state.knownUnits || 1 };
+    const bldgInfo = { totalSqft: state.knownTotalSqft ? +state.knownTotalSqft : null, units: state.knownUnits || 1, hvacPerUnit: state.hvacPerUnit };
     const result = await callClaudeVision(state.apiKey, imagePayload, mediaType, bldgInfo);
 
     clearInterval(stepTimer);
@@ -1395,7 +1433,24 @@ function rescaleRooms() {
 function goToEstimate() {
   const building = state.analysisResult?.building || {};
   const hvac = state.analysisResult?.hvac_notes || {};
-  state.bom = generateBOM(state.rooms, building, hvac);
+
+  // For multi-unit with shared system, multiply rooms to cover all units
+  let rooms = state.rooms;
+  if (!state.hvacPerUnit && state.knownUnits > 1) {
+    // Shared system: duplicate rooms for each additional unit
+    rooms = [];
+    for (let u = 0; u < state.knownUnits; u++) {
+      state.rooms.forEach(r => rooms.push({ ...r, name: state.knownUnits > 1 ? `Unit ${u+1} - ${r.name}` : r.name }));
+    }
+    building.total_sqft = (building.total_sqft || 0) * state.knownUnits;
+  }
+
+  // For per-unit system on multi-unit, note it in the project name
+  if (state.hvacPerUnit && state.knownUnits > 1) {
+    state.projectName = state.projectName || `HVAC Estimate (per unit × ${state.knownUnits})`;
+  }
+
+  state.bom = generateBOM(rooms, building, hvac);
   state.step = 'bom';
   render();
 }
